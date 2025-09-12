@@ -16,8 +16,8 @@ class TransactionController extends Controller
             $query->where('type', $request->type);
         }
 
-        if ($request->filled('category')) {
-            $query->where('category', $request->category);
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
         }
 
         if ($request->filled('start')) {
@@ -38,7 +38,7 @@ class TransactionController extends Controller
             'amount' => 'required|numeric',
             'description' => 'nullable|string',
             'date' => 'required|date',
-            'category' => 'nullable|string'
+            'category_id' => 'required|exists:categories,id',
         ]);
 
         $data['user_id'] = Auth::id();
@@ -64,7 +64,7 @@ class TransactionController extends Controller
             'amount' => 'required|numeric',
             'description' => 'nullable|string',
             'date' => 'required|date',
-            'category' => 'nullable|string'
+            'category_id' => 'required|exists:categories,id',
         ]);
 
         $transaction->update($data);
