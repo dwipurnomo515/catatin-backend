@@ -11,27 +11,17 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        Log::info('Masuk ke dashboard');
-
         $user = Auth::user();
-        Log::info('User:', ['user' => $user]);
-
         if (!$user) {
-            Log::warning('User null');
-            return response()->json([
-                'message' => 'Unauthenticated'
-            ], 401);
+            return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        Log::info('Ambil semua transaksi...');
         $transactions = Transaction::where('user_id', $user->id)->get();
-        Log::info('Total transaksi: ' . $transactions->count());
 
-        $income = $transactions->where('type', 'income')->sum('amount');
-        $expense = $transactions->where('type', 'expense')->sum('amount');
-        $balance = $income - $expense;
+        $totalIncome = $transactions->where('type', 'income')->sum('amount');
+        $totalExpense = $transactions->where('type', 'expense')->sum('amount');
+        $balance = $totalIncome - $totalExpense;
 
-        Log::info('Mulai hitung monthly summary');
         $monthly = Transaction::selectRaw("DATE_FORMAT(date, '%Y-%m') as month, type, SUM(amount) as total")
             ->where('user_id', $user->id)
             ->where('date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
@@ -42,22 +32,68 @@ class DashboardController extends Controller
 
         $summary = [];
         foreach ($monthly as $month => $data) {
-            $income = $data->where('type', 'income')->sum('total');
-            $expense = $data->where('type', 'expense')->sum('total');
+            $monthIncome = $data->where('type', 'income')->sum('total');
+            $monthExpense = $data->where('type', 'expense')->sum('total');
             $summary[] = [
                 'month' => $month,
-                'income' => (float) $income,
-                'expense' => (float) $expense
+                'income' => (float) $monthIncome,
+                'expense' => (float) $monthExpense
             ];
         }
 
-        Log::info('Selesai');
+        // Hitung monthly growth income
+        $growth = 0;
+        if (count($summary) >= 2) {
+            $lastMonth = end($summary);
+            $prevMonth = prev($summary);
+            $prevIncome = $prevMonth['income'] ?: 1;
+            $growth = (($lastMonth['income'] - $prevMonth['income']) / $prevIncome) * 100;
+        }
+
+        // Breakdown kategori pengeluaran
+        $categoryBreakdown = Transaction::with('category')
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->get()
+            ->groupBy(function ($transaction) {
+                return $transaction->category->name ?? 'Unknown';
+            })
+            ->map(function ($transactions, $categoryName) use ($totalExpense) {
+                $amount = $transactions->sum('amount');
+                return [
+                    'name' => $categoryName,
+                    'amount' => (float) $amount,
+                    'percentage' => $totalExpense > 0 ? round(($amount / $totalExpense) * 100, 1) : 0,
+                ];
+            })
+            ->values();
+
+        $recentTransactions = Transaction::with('category')
+            ->where('user_id', $user->id)
+            ->latest('date')
+            ->take(5)
+            ->get()
+            ->map(function ($t) {
+                return [
+                    'id' => $t->id,
+                    'type' => $t->type,
+                    'amount' => (float) $t->amount,
+                    'category' => $t->category->name ?? 'Unknown',
+                    'description' => $t->description,
+                    'date' => \Carbon\Carbon::parse($t->date)->toDateString(),
+                ];
+            });
+
 
         return response()->json([
-            'total_income' => (float) $income,
-            'total_expense' => (float) $expense,
+            'total_income' => (float) $totalIncome,
+            'total_expense' => (float) $totalExpense,
             'balance' => (float) $balance,
             'monthly_summary' => $summary,
+            'monthly_growth' => round($growth, 2),
+            'category_breakdown' => $categoryBreakdown,
+            'recent_transactions' => $recentTransactions,
+
         ]);
     }
 }
