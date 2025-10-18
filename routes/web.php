@@ -1,7 +1,5 @@
 <?php
 
-<?php
-
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use Illuminate\Http\Request;
